@@ -154,6 +154,10 @@ class BaseModel(metaclass=_model_construction.ModelMetaclass):
         `__init__` uses `__pydantic_self__` instead of the more common `self` for the first arg to
         allow `self` as a field name.
         """
+
+        if __pydantic_self__.__pydantic_generic_metadata__['parameters']:
+            raise RuntimeError(f'Free parameters in {__pydantic_self__.__class__.__name__}')
+
         # `__tracebackhide__` tells pytest and some other tools to omit this function from tracebacks
         __tracebackhide__ = True
         __pydantic_self__.__pydantic_validator__.validate_python(data, self_instance=__pydantic_self__)
@@ -491,6 +495,9 @@ class BaseModel(metaclass=_model_construction.ModelMetaclass):
         Returns:
             The validated model instance.
         """
+        if cls.__pydantic_generic_metadata__['parameters']:
+            raise RuntimeError(f'Free parameters in {cls.__name__}')
+
         # `__tracebackhide__` tells pytest and some other tools to omit this function from tracebacks
         __tracebackhide__ = True
         return cls.__pydantic_validator__.validate_python(
@@ -518,6 +525,9 @@ class BaseModel(metaclass=_model_construction.ModelMetaclass):
         Raises:
             ValueError: If `json_data` is not a JSON string.
         """
+        if cls.__pydantic_generic_metadata__['parameters']:
+            raise RuntimeError(f'Free parameters in {cls.__name__}')
+
         # `__tracebackhide__` tells pytest and some other tools to omit this function from tracebacks
         __tracebackhide__ = True
         return cls.__pydantic_validator__.validate_json(json_data, strict=strict, context=context)
