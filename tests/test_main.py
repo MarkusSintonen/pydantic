@@ -45,6 +45,7 @@ from pydantic import (
     ValidationInfo,
     constr,
     field_validator,
+    create_model,
 )
 
 
@@ -2887,3 +2888,50 @@ def test_schema_generator_customize_type_constraints_order() -> None:
             'ctx': {'max_length': 1},
         }
     ]
+
+
+def test_asd():
+    defaults = {int: 0, float: 0.0, str: "", Optional[int]: None, Optional[float]: None, Optional[str]: None}
+    types = [*defaults.keys()]
+
+    for i in range(10):
+        fs = {}
+        for j in range(100):
+            t = types[j % len(types)]
+            fs[f"field_{j}"] = (t, defaults[t])
+        m = create_model(f"Inner{i}", **fs)
+        defaults[m] = m()
+
+    types = [*defaults.keys()]
+    models = []
+    for i in range(30):
+        fs = {}
+        for j in range(100):
+            t = types[j % len(types)]
+            fs[f"field_{j}"] = (t, defaults[t])
+        m = create_model(f"Model{i}", **fs)
+        models.append(m)
+
+    from time import time
+
+    from pydantic._internal._core_utils import flatten_schema_defs, inline_schema_defs, collect_definitions
+    from pydantic._internal._discriminated_union import apply_discriminators
+    import cProfile
+    import pstats
+
+    pr = cProfile.Profile()
+    pr.enable()
+
+    adapters = []
+    for m in models:
+        adapters.append(TypeAdapter(m))
+        #assert t.validate_python({}) == m()
+
+    pr.disable()
+    pstats.Stats(pr, stream=sys.stdout).sort_stats("time").print_stats(20)
+
+    #s = time()
+    #for _ in range(10):
+    #    for a in adapters:
+    #        apply_discriminators(a.core_schema)
+    #print(time() - s)

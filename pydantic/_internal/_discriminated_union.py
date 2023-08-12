@@ -2,11 +2,11 @@ from __future__ import annotations as _annotations
 
 from typing import Any, Hashable, Sequence
 
-from pydantic_core import CoreSchema, core_schema
+from pydantic_core import CoreSchema, core_schema, apply_discriminators as _apply_discriminators
 
 from ..errors import PydanticUserError
 from . import _core_utils
-from ._core_utils import CoreSchemaField, collect_definitions
+from ._core_utils import CoreSchemaField, collect_definitions, WALK_CORE
 
 CORE_SCHEMA_METADATA_DISCRIMINATOR_PLACEHOLDER_KEY = 'pydantic.internal.union_discriminator'
 
@@ -20,6 +20,10 @@ def set_discriminator(schema: CoreSchema, discriminator: Any) -> None:
 
 def apply_discriminators(schema: core_schema.CoreSchema) -> core_schema.CoreSchema:
     definitions = collect_definitions(schema)
+
+    if WALK_CORE:
+        _apply_discriminators(schema, lambda s, discriminator: apply_discriminator(s, discriminator, definitions))
+        return schema
 
     def inner(s: core_schema.CoreSchema, recurse: _core_utils.Recurse) -> core_schema.CoreSchema:
         s = recurse(s, inner)

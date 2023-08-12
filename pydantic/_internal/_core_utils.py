@@ -3,7 +3,14 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Callable, Hashable, Iterable, TypeVar, Union, cast
 
-from pydantic_core import CoreSchema, core_schema
+from pydantic_core import (
+    CoreSchema,
+    core_schema,
+    collect_definitions as _collect_definitions,
+    collect_ref_names as _collect_ref_names,
+    collect_invalid_schemas as _collect_invalid_schemas,
+    simplify_schema_references
+)
 from typing_extensions import TypeAliasType, TypeGuard, get_args
 
 from . import _repr
@@ -30,6 +37,8 @@ CoreSchemaOrField = Union[core_schema.CoreSchema, CoreSchemaField]
 _CORE_SCHEMA_FIELD_TYPES = {'typed-dict-field', 'dataclass-field', 'model-field', 'computed-field'}
 _FUNCTION_WITH_INNER_SCHEMA_TYPES = {'function-before', 'function-after', 'function-wrap'}
 _LIST_LIKE_SCHEMA_WITH_ITEMS_TYPES = {'list', 'tuple-variable', 'set', 'frozenset'}
+
+WALK_CORE = True
 
 
 def is_core_schema(
@@ -103,6 +112,9 @@ def get_ref(s: core_schema.CoreSchema) -> None | str:
 
 
 def collect_definitions(schema: core_schema.CoreSchema) -> dict[str, core_schema.CoreSchema]:
+    if WALK_CORE:
+        return _collect_definitions(schema)
+
     defs: dict[str, CoreSchema] = {}
 
     def _record_valid_refs(s: core_schema.CoreSchema, recurse: Recurse) -> core_schema.CoreSchema:
@@ -123,15 +135,19 @@ def define_expected_missing_refs(
         # in this case, there are no missing refs to potentially substitute, so there's no need to walk the schema
         # this is a common case (will be hit for all non-generic models), so it's worth optimizing for
         return schema
-    refs = set()
 
-    def _record_refs(s: core_schema.CoreSchema, recurse: Recurse) -> core_schema.CoreSchema:
-        ref: str | None = s.get('ref')
-        if ref:
-            refs.add(ref)
-        return recurse(s, _record_refs)
+    if WALK_CORE:
+        refs = _collect_ref_names(schema)
+    else:
+        refs = set()
 
-    walk_core_schema(schema, _record_refs)
+        def _record_refs(s: core_schema.CoreSchema, recurse: Recurse) -> core_schema.CoreSchema:
+            ref: str | None = s.get('ref')
+            if ref:
+                refs.add(ref)
+            return recurse(s, _record_refs)
+
+        walk_core_schema(schema, _record_refs)
 
     expected_missing_refs = allowed_missing_refs.difference(refs)
     if expected_missing_refs:
@@ -146,6 +162,9 @@ def define_expected_missing_refs(
 
 
 def collect_invalid_schemas(schema: core_schema.CoreSchema) -> list[core_schema.CoreSchema]:
+    if WALK_CORE:
+        return _collect_invalid_schemas(schema)
+
     invalid_schemas: list[core_schema.CoreSchema] = []
 
     def _is_schema_valid(s: core_schema.CoreSchema, recurse: Recurse) -> core_schema.CoreSchema:
@@ -404,10 +423,15 @@ def walk_core_schema(schema: core_schema.CoreSchema, f: Walk) -> core_schema.Cor
     Returns:
         core_schema.CoreSchema: A processed CoreSchema.
     """
+    if WALK_CORE:
+        assert False
     return f(schema, _dispatch)
 
 
 def _simplify_schema_references(schema: core_schema.CoreSchema, inline: bool) -> core_schema.CoreSchema:  # noqa: C901
+    if WALK_CORE:
+        return simplify_schema_references(schema, inline)
+
     all_defs: dict[str, core_schema.CoreSchema] = {}
 
     def make_result(schema: core_schema.CoreSchema, defs: Iterable[core_schema.CoreSchema]) -> core_schema.CoreSchema:
