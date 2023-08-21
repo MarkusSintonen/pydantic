@@ -6,7 +6,7 @@ groups = ["default", "docs", "email", "linting", "memray", "mypy", "testing", "t
 cross_platform = true
 static_urls = false
 lock_version = "4.3"
-content_hash = "sha256:3ef2197fa30f9d00b62c1d394eacad832a83b5f6cd09e0573014d4ff1c7c771a"
+content_hash = "sha256:a8fe581c57d35092ab18bf0fadab84cd8f0a8b1a39d353b463183da9aa959831"
 
 [[package]]
 name = "annotated-types"
@@ -1029,15 +1029,15 @@ files = [
 
 [[package]]
 name = "pydantic-core"
-version = "2.5.0"
+version = "2.6.1"
 requires_python = ">=3.7"
-path = "/Users/markussintonen/git/pydantic-core/target/wheels/pydantic_core-2.5.0-cp311-cp311-macosx_10_7_x86_64.whl"
+path = "/Users/markussintonen/git/pydantic-core/target/wheels/pydantic_core-2.6.1-cp311-cp311-macosx_10_7_x86_64.whl"
 summary = ""
 dependencies = [
     "typing-extensions!=4.7.0,>=4.6.0",
 ]
 files = [
-    {file = "pydantic_core-2.5.0-cp311-cp311-macosx_10_7_x86_64.whl", hash = "sha256:299828f743d306d4fbef2167a9cdf2dc6cbc49c064649701592b720e77d20715"},
+    {file = "pydantic_core-2.6.1-cp311-cp311-macosx_10_7_x86_64.whl", hash = "sha256:e962f7535080864d6916d7043aaf59f336a23c9fc2fc34750997b32f2a62985d"},
 ]
 
 [[package]]

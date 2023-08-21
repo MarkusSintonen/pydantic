@@ -61,7 +61,7 @@ requires-python = '>=3.7'
 dependencies = [
     'typing-extensions>=4.6.1',
     'annotated-types>=0.4.0',
-    "pydantic-core @ file:///Users/markussintonen/git/pydantic-core/target/wheels/pydantic_core-2.5.0-cp311-cp311-macosx_10_7_x86_64.whl",
+    "pydantic-core @ file:///Users/markussintonen/git/pydantic-core/target/wheels/pydantic_core-2.6.1-cp311-cp311-macosx_10_7_x86_64.whl",
 ]
 dynamic = ['version', 'readme']
 
