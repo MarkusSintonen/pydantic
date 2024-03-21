@@ -198,10 +198,7 @@ class TypeAdapter(Generic[T]):
         Returns:
             A type adapter configured for the specified `type`.
         """
-        type_is_annotated: bool = _typing_extra.is_annotated(type)
-        annotated_type: Any = get_args(type)[0] if type_is_annotated else None
-        type_has_config: bool = _type_has_config(annotated_type if type_is_annotated else type)
-
+        type_has_config: bool = _type_has_config(TypeAdapter._annotated_type(type) or type)
         if type_has_config and config is not None:
             raise PydanticUserError(
                 'Cannot use `config` when the type is a BaseModel, dataclass or TypedDict.'
@@ -247,43 +244,54 @@ class TypeAdapter(Generic[T]):
     def validator(self) -> SchemaValidator:
         """The pydantic-core SchemaValidator used to validate instances of the model."""
         try:
-            return _getattr_no_parents(self._type, '__pydantic_validator__')
+            existing_validator = _getattr_no_parents(self._type, '__pydantic_validator__')
+            if isinstance(existing_validator, SchemaValidator):
+                return existing_validator  # Do not return MockValSer as it causes another core schema to be built
         except AttributeError:
-            self._dive_parent(2)  # +2 for @cached_property + validator
-            return create_schema_validator(
-                schema=self.core_schema,
-                schema_type=self._type,
-                schema_type_module=self._module_name,
-                schema_type_name=str(self._type),
-                schema_kind='TypeAdapter',
-                config=self._core_config,
-                plugin_settings=self._config_wrapper.plugin_settings,
-            )
+            pass
+
+        self._dive_parent(2)  # +2 for @cached_property + validator
+        return create_schema_validator(
+            schema=self.core_schema,
+            schema_type=self._type,
+            schema_type_module=self._module_name,
+            schema_type_name=str(self._type),
+            schema_kind='TypeAdapter',
+            config=self._core_config,
+            plugin_settings=self._config_wrapper.plugin_settings,
+        )
 
     @cached_property
     def serializer(self) -> SchemaSerializer:
         """The pydantic-core SchemaSerializer used to dump instances of the model."""
         try:
-            return _getattr_no_parents(self._type, '__pydantic_serializer__')
+            existing_serializer = _getattr_no_parents(self._type, '__pydantic_serializer__')
+            if isinstance(existing_serializer, SchemaSerializer):
+                return existing_serializer  # Do not return MockValSer as it causes another core schema to be built
         except AttributeError:
-            self._dive_parent(2)  # +2 for @cached_property + validator
-            return SchemaSerializer(self.core_schema, self._core_config)
+            pass
+
+        self._dive_parent(2)  # +2 for @cached_property + validator
+        return SchemaSerializer(self.core_schema, self._core_config)
 
     def _defer_build(self) -> bool:
         config = self._config if self._config is not None else self._model_config()
         return self._is_defer_build_config(config) if config is not None else False
 
     def _model_config(self) -> ConfigDict | None:
-        # FastAPI heavily uses Annotated
-        inner_type: Any = get_args(self._type)[0] if _typing_extra.is_annotated(self._type) else self._type
+        type_: Any = self._annotated_type(self._type) or self._type  # FastAPI heavily uses Annotated
 
-        if _utils.lenient_issubclass(inner_type, BaseModel):
-            return inner_type.model_config
-        return getattr(inner_type, '__pydantic_config__', None)
+        if _utils.lenient_issubclass(type_, BaseModel):
+            return type_.model_config
+        return getattr(type_, '__pydantic_config__', None)
 
     @staticmethod
     def _is_defer_build_config(config: ConfigDict) -> bool:
         return config.get('defer_build', False) is True and 'type_adapter' in config.get('_defer_build_mode', tuple())
+
+    @staticmethod
+    def _annotated_type(type_: Any) -> Any | None:
+        return get_args(type_)[0] if _typing_extra.is_annotated(type_) else None
 
     @cached_property
     def _core_config(self) -> CoreConfig:

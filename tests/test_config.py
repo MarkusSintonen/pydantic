@@ -33,9 +33,9 @@ from pydantic.type_adapter import TypeAdapter
 from pydantic.warnings import PydanticDeprecationWarning
 
 if sys.version_info < (3, 9):
-    from typing_extensions import Annotated
+    from typing_extensions import Annotated, Literal
 else:
-    from typing import Annotated
+    from typing import Annotated, Literal
 
 import pytest
 
@@ -701,12 +701,22 @@ def test_json_encoders_type_adapter() -> None:
     assert json.loads(ta.dump_json(1)) == '2'
 
 
-def test_config_model_defer_build():
-    class MyModel(BaseModel, defer_build=True):
+@pytest.mark.parametrize('defer_build_mode', [None, ('model',), ('type_adapter',), ('model', 'type_adapter')])
+def test_config_model_defer_build(defer_build_mode: tuple[Literal['model', 'type_adapter'], ...] | None):
+    config = ConfigDict(defer_build=True)
+    if defer_build_mode:
+        config['_defer_build_mode'] = defer_build_mode
+
+    class MyModel(BaseModel):
+        model_config = config
         x: int
 
-    assert isinstance(MyModel.__pydantic_validator__, MockValSer)
-    assert isinstance(MyModel.__pydantic_serializer__, MockValSer)
+    if defer_build_mode is None or 'model' in defer_build_mode:
+        assert isinstance(MyModel.__pydantic_validator__, MockValSer)
+        assert isinstance(MyModel.__pydantic_serializer__, MockValSer)
+    else:
+        assert isinstance(MyModel.__pydantic_validator__, SchemaValidator), 'Should check _defer_build_mode'
+        assert isinstance(MyModel.__pydantic_serializer__, SchemaSerializer)
 
     m = MyModel(x=1)
     assert m.x == 1
@@ -715,23 +725,45 @@ def test_config_model_defer_build():
     assert isinstance(MyModel.__pydantic_serializer__, SchemaSerializer)
 
 
-def test_config_type_adapter_defer_build():
-    class MyModel(BaseModel, defer_build=True):
+@pytest.mark.parametrize('defer_build_mode', [None, ('model',), ('model', 'type_adapter')])
+def test_config_type_adapter_defer_build(
+    defer_build_mode: tuple[Literal['model', 'type_adapter'], ...] | None, monkeypatch
+):
+    orig_generate_schema = GenerateSchema.generate_schema
+    count_generate_schema = 0
+
+    def generate_schema_call_counter(*args: Any, **kwargs: Any) -> Any:
+        nonlocal count_generate_schema
+        count_generate_schema += 1
+        return orig_generate_schema(*args, **kwargs)
+
+    monkeypatch.setattr(GenerateSchema, 'generate_schema', generate_schema_call_counter)
+
+    config = ConfigDict(defer_build=True)
+    if defer_build_mode:
+        config['_defer_build_mode'] = defer_build_mode
+    type_adapter_defer = 'type_adapter' in (defer_build_mode or [])
+
+    class MyModel(BaseModel):
+        model_config = config
         x: int
 
-    ta = TypeAdapter(MyModel)
+    assert count_generate_schema == 0
 
-    assert isinstance(ta.validator, MockValSer)
-    assert isinstance(ta.serializer, MockValSer)
+    ta = TypeAdapter(MyModel)
+    assert count_generate_schema == (0 if type_adapter_defer else 1), 'Should build TypeAdapter core schema deferred'
 
     m = ta.validate_python({'x': 1})
     assert m.x == 1
     m2 = ta.validate_python({'x': 2})
     assert m2.x == 2
 
-    # in the future, can reassign said validators to the TypeAdapter
-    assert isinstance(MyModel.__pydantic_validator__, SchemaValidator)
-    assert isinstance(MyModel.__pydantic_serializer__, SchemaSerializer)
+    assert isinstance(ta.validator, SchemaValidator)
+    assert isinstance(ta.serializer, SchemaSerializer)
+    assert isinstance(MyModel.__pydantic_validator__, MockValSer)
+    assert isinstance(MyModel.__pydantic_serializer__, MockValSer)
+
+    assert count_generate_schema == 1, 'Should not build duplicate core schemas in validate_python'
 
 
 def test_config_model_defer_build_nested():

@@ -384,7 +384,7 @@ def test_eval_type_backport():
 
 
 def defer_build_test_type_adapters(
-    defer_build: bool, defer_build_mode: Tuple[Literal['model', 'type_adapter']]
+    defer_build: bool, defer_build_mode: Tuple[Literal['model', 'type_adapter'], ...]
 ) -> List[TypeAdapter]:
     class Model(BaseModel, defer_build=defer_build, _defer_build_mode=defer_build_mode):
         x: int
@@ -426,7 +426,7 @@ def defer_build_test_type_adapters(
 @pytest.mark.parametrize('defer_build_mode', [('model',), DEFER_ENABLE_MODE])
 def test_core_schema_respects_defer_build(
     defer_build: bool,
-    defer_build_mode: Tuple[Literal['model', 'type_adapter']],
+    defer_build_mode: Tuple[Literal['model', 'type_adapter'], ...],
 ) -> None:
     for type_adapter in defer_build_test_type_adapters(defer_build, defer_build_mode):
         if defer_build and 'type_adapter' in defer_build_mode:
@@ -444,7 +444,7 @@ def test_core_schema_respects_defer_build(
 @pytest.mark.parametrize('defer_build_mode', [('model',), DEFER_ENABLE_MODE])
 def test_validator_respects_defer_build(
     defer_build: bool,
-    defer_build_mode: Tuple[Literal['model', 'type_adapter']],
+    defer_build_mode: Tuple[Literal['model', 'type_adapter'], ...],
 ) -> None:
     for type_adapter in defer_build_test_type_adapters(defer_build, defer_build_mode):
         if defer_build and 'type_adapter' in defer_build_mode:
@@ -462,7 +462,7 @@ def test_validator_respects_defer_build(
 @pytest.mark.parametrize('defer_build_mode', [('model',), DEFER_ENABLE_MODE])
 def test_serializer_respects_defer_build(
     defer_build: bool,
-    defer_build_mode: Tuple[Literal['model', 'type_adapter']],
+    defer_build_mode: Tuple[Literal['model', 'type_adapter'], ...],
 ) -> None:
     for type_adapter in defer_build_test_type_adapters(defer_build, defer_build_mode):
         type_ = type_adapter._type
