@@ -24,6 +24,7 @@ from .json_schema import (
 from .plugin._schema_validator import create_schema_validator
 
 T = TypeVar('T')
+V = TypeVar('V')
 
 
 if TYPE_CHECKING:
@@ -219,8 +220,7 @@ class TypeAdapter(Generic[T]):
 
         if not self._defer_build():
             # Immediately initialize the core schema, validator and serializer
-            self._dive_parent(1)  # +1 for this __init__
-            _, _, _ = (self.core_schema, self.validator, self.serializer)
+            _, _, _ = (self._dive_parent(1).core_schema, self.validator, self.serializer)  # +1 for this __init__
 
     def _dive_parent(self, depth: int) -> Self:
         if self._parent_depth is not None:
@@ -234,45 +234,36 @@ class TypeAdapter(Generic[T]):
             return _getattr_no_parents(self._type, '__pydantic_core_schema__')
         except AttributeError:
             self._dive_parent(2)  # +2 for @cached_property and self.core_schema
-            parent_depth = self._parent_depth
-            assert parent_depth is not None
-            self._parent_depth = None  # No need to track parent depth anymore
-
-            return _get_schema(self._type, self._config_wrapper, parent_depth=parent_depth)
+            assert self._parent_depth is not None, 'this should not happen!'
+            return _get_schema(self._type, self._config_wrapper, parent_depth=self._parent_depth)
+        finally:
+            self._parent_depth = None  # No need to track parent depth anymore, we only use this once in cached_property
 
     @cached_property
     def validator(self) -> SchemaValidator:
         """The pydantic-core SchemaValidator used to validate instances of the model."""
         try:
-            existing_validator = _getattr_no_parents(self._type, '__pydantic_validator__')
-            if isinstance(existing_validator, SchemaValidator):
-                return existing_validator  # Do not return MockValSer as it causes another core schema to be built
+            return _getattr_no_parents(self._type, '__pydantic_validator__')
         except AttributeError:
-            pass
-
-        self._dive_parent(2)  # +2 for @cached_property + validator
-        return create_schema_validator(
-            schema=self.core_schema,
-            schema_type=self._type,
-            schema_type_module=self._module_name,
-            schema_type_name=str(self._type),
-            schema_kind='TypeAdapter',
-            config=self._core_config,
-            plugin_settings=self._config_wrapper.plugin_settings,
-        )
+            core_schema = self._dive_parent(2).core_schema  # +2 for @cached_property + validator
+            return create_schema_validator(
+                schema=core_schema,
+                schema_type=self._type,
+                schema_type_module=self._module_name,
+                schema_type_name=str(self._type),
+                schema_kind='TypeAdapter',
+                config=self._core_config,
+                plugin_settings=self._config_wrapper.plugin_settings,
+            )
 
     @cached_property
     def serializer(self) -> SchemaSerializer:
         """The pydantic-core SchemaSerializer used to dump instances of the model."""
         try:
-            existing_serializer = _getattr_no_parents(self._type, '__pydantic_serializer__')
-            if isinstance(existing_serializer, SchemaSerializer):
-                return existing_serializer  # Do not return MockValSer as it causes another core schema to be built
+            return _getattr_no_parents(self._type, '__pydantic_serializer__')
         except AttributeError:
-            pass
-
-        self._dive_parent(2)  # +2 for @cached_property + validator
-        return SchemaSerializer(self.core_schema, self._core_config)
+            core_schema = self._dive_parent(2).core_schema  # +2 for @cached_property + validator
+            return SchemaSerializer(core_schema, self._core_config)
 
     def _defer_build(self) -> bool:
         config = self._config if self._config is not None else self._model_config()
@@ -484,8 +475,9 @@ class TypeAdapter(Generic[T]):
             The JSON schema for the model as a dictionary.
         """
         schema_generator_instance = schema_generator(by_alias=by_alias, ref_template=ref_template)
-        self._dive_parent(1)  # +1 for self.json_schema
-        return schema_generator_instance.generate(self.core_schema, mode=mode)
+
+        core_schema = self._dive_parent(1).core_schema  # +1 for self.json_schema
+        return schema_generator_instance.generate(core_schema, mode=mode)
 
     @staticmethod
     def json_schemas(
