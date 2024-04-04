@@ -151,13 +151,6 @@ class TypeAdapter(Generic[T]):
 
     **Note:** `TypeAdapter` instances are not types, and cannot be used as type annotations for fields.
 
-    **Note:** By default, `TypeAdapter` does not respect the
-    [`defer_build=True`][pydantic.config.ConfigDict.defer_build] setting in the
-    [`model_config`][pydantic.BaseModel.model_config] or in the `TypeAdapter` constructor `config`. You need to also
-    explicitly set [`_defer_build_mode=('model', 'type_adapter')`][pydantic.config.ConfigDict._defer_build_mode] of the
-    config to defer the model validator and serializer construction. Thus, this feature is opt-in to ensure backwards
-    compatibility.
-
     Attributes:
         core_schema: The core schema for the type.
         validator (SchemaValidator): The schema validator for the type.
@@ -255,8 +248,6 @@ class TypeAdapter(Generic[T]):
         if not self._defer_build():
             # Immediately initialize the core schema, validator and serializer
             with self._with_frame_depth(1):  # +1 frame depth for this __init__
-                # Model itself may be using deferred building. For backward compatibility we don't rebuild model mocks
-                # here as part of __init__ even though TypeAdapter itself is not using deferred building.
                 self._init_core_attrs(rebuild_mocks=False)
 
     @contextmanager
@@ -335,9 +326,7 @@ class TypeAdapter(Generic[T]):
 
     @staticmethod
     def _is_defer_build_config(config: ConfigDict) -> bool:
-        # TODO reevaluate this logic when we have a better understanding of how defer_build should work with TypeAdapter
-        # Should we drop the special _defer_build_mode check?
-        return config.get('defer_build', False) is True and 'type_adapter' in config.get('_defer_build_mode', tuple())
+        return config.get('defer_build', False)
 
     @_frame_depth(1)
     def validate_python(

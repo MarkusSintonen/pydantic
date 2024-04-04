@@ -4,7 +4,7 @@ import sys
 from contextlib import nullcontext as does_not_raise
 from decimal import Decimal
 from inspect import signature
-from typing import Any, ContextManager, Dict, Iterable, NamedTuple, Optional, Tuple, Type, Union
+from typing import Any, ContextManager, Dict, Iterable, NamedTuple, Optional, Type, Union
 
 from dirty_equals import HasRepr, IsPartialDict
 from pydantic_core import SchemaError, SchemaSerializer, SchemaValidator
@@ -35,9 +35,9 @@ from pydantic.warnings import PydanticDeprecationWarning
 from .conftest import CallCounter
 
 if sys.version_info < (3, 9):
-    from typing_extensions import Annotated, Literal
+    from typing_extensions import Annotated
 else:
-    from typing import Annotated, Literal
+    from typing import Annotated
 
 import pytest
 
@@ -703,26 +703,19 @@ def test_json_encoders_type_adapter() -> None:
     assert json.loads(ta.dump_json(1)) == '2'
 
 
-@pytest.mark.parametrize('defer_build_mode', [None, tuple(), ('model',), ('type_adapter',), ('model', 'type_adapter')])
-def test_config_model_defer_build(
-    defer_build_mode: Optional[Tuple[Literal['model', 'type_adapter'], ...]], generate_schema_calls: CallCounter
-):
-    config = ConfigDict(defer_build=True)
-    if defer_build_mode is not None:
-        config['_defer_build_mode'] = defer_build_mode
-
-    class MyModel(BaseModel):
-        model_config = config
+@pytest.mark.parametrize('defer_build', [False, True])
+def test_config_model_defer_build(defer_build: bool, generate_schema_calls: CallCounter):
+    class MyModel(BaseModel, defer_build=defer_build):
         x: int
 
-    if defer_build_mode is None or 'model' in defer_build_mode:
+    if defer_build:
         assert isinstance(MyModel.__pydantic_validator__, MockValSer)
         assert isinstance(MyModel.__pydantic_serializer__, MockValSer)
-        assert generate_schema_calls.count == 0, 'Should respect _defer_build_mode'
+        assert generate_schema_calls.count == 0, 'Should respect defer_build'
     else:
         assert isinstance(MyModel.__pydantic_validator__, SchemaValidator)
         assert isinstance(MyModel.__pydantic_serializer__, SchemaSerializer)
-        assert generate_schema_calls.count == 1, 'Should respect _defer_build_mode'
+        assert generate_schema_calls.count == 1, 'Should respect defer_build'
 
     m = MyModel(x=1)
     assert m.x == 1
@@ -735,20 +728,12 @@ def test_config_model_defer_build(
     assert generate_schema_calls.count == 1, 'Should not build duplicated core schemas'
 
 
-@pytest.mark.parametrize('defer_build_mode', [None, tuple(), ('model',), ('type_adapter',), ('model', 'type_adapter')])
-def test_config_model_type_adapter_defer_build(
-    defer_build_mode: Optional[Tuple[Literal['model', 'type_adapter'], ...]], generate_schema_calls: CallCounter
-):
-    config = ConfigDict(defer_build=True)
-    if defer_build_mode is not None:
-        config['_defer_build_mode'] = defer_build_mode
-
-    class MyModel(BaseModel):
-        model_config = config
+@pytest.mark.parametrize('defer_build', [False, True])
+def test_config_model_type_adapter_defer_build(defer_build: bool, generate_schema_calls: CallCounter):
+    class MyModel(BaseModel, defer_build=defer_build):
         x: int
 
-    is_deferred = defer_build_mode is None or 'model' in defer_build_mode
-    assert generate_schema_calls.count == (0 if is_deferred else 1)
+    assert generate_schema_calls.count == (0 if defer_build else 1), 'Should respect defer_build'
     generate_schema_calls.reset()
 
     ta = TypeAdapter(MyModel)
@@ -760,43 +745,26 @@ def test_config_model_type_adapter_defer_build(
     assert ta.dump_python(MyModel.model_construct(x=1))['x'] == 1
     assert ta.json_schema()['type'] == 'object'
 
-    assert generate_schema_calls.count == (1 if is_deferred else 0), 'Should not build duplicate core schemas'
+    assert generate_schema_calls.count == (1 if defer_build else 0), 'Should not build duplicate core schemas'
 
 
-@pytest.mark.parametrize('defer_build_mode', [None, tuple(), ('model',), ('type_adapter',), ('model', 'type_adapter')])
-def test_config_plain_type_adapter_defer_build(
-    defer_build_mode: Optional[Tuple[Literal['model', 'type_adapter'], ...]], generate_schema_calls: CallCounter
-):
-    config = ConfigDict(defer_build=True)
-    if defer_build_mode is not None:
-        config['_defer_build_mode'] = defer_build_mode
-    is_deferred = defer_build_mode is not None and 'type_adapter' in defer_build_mode
+@pytest.mark.parametrize('defer_build', [False, True])
+def test_config_plain_type_adapter_defer_build(defer_build: bool, generate_schema_calls: CallCounter):
+    ta = TypeAdapter(Dict[str, int], config=ConfigDict(defer_build=defer_build))
 
-    ta = TypeAdapter(Dict[str, int], config=config)
-
-    assert generate_schema_calls.count == (0 if is_deferred else 1)
-    generate_schema_calls.reset()
+    assert generate_schema_calls.count == (0 if defer_build else 1)
 
     assert ta.validate_python({}) == {}
     assert ta.validate_python({'x': 1}) == {'x': 1}
     assert ta.dump_python({'x': 2}) == {'x': 2}
     assert ta.json_schema()['type'] == 'object'
 
-    assert generate_schema_calls.count == (1 if is_deferred else 0), 'Should not build duplicate core schemas'
+    assert generate_schema_calls.count == 1, 'Should not build duplicate core schemas'
 
 
-@pytest.mark.parametrize('defer_build_mode', [None, ('model',), ('type_adapter',), ('model', 'type_adapter')])
-def test_config_model_defer_build_nested(
-    defer_build_mode: Optional[Tuple[Literal['model', 'type_adapter'], ...]], generate_schema_calls: CallCounter
-):
-    config = ConfigDict(defer_build=True)
-    if defer_build_mode:
-        config['_defer_build_mode'] = defer_build_mode
-
-    assert generate_schema_calls.count == 0
-
-    class MyNestedModel(BaseModel):
-        model_config = config
+@pytest.mark.parametrize('defer_build', [False, True])
+def test_config_model_defer_build_nested(defer_build: bool, generate_schema_calls: CallCounter):
+    class MyNestedModel(BaseModel, defer_build=defer_build):
         x: int
 
     class MyModel(BaseModel):
@@ -805,15 +773,8 @@ def test_config_model_defer_build_nested(
     assert isinstance(MyModel.__pydantic_validator__, SchemaValidator)
     assert isinstance(MyModel.__pydantic_serializer__, SchemaSerializer)
 
-    expected_schema_count = 1 if defer_build_mode is None or 'model' in defer_build_mode else 2
-    assert generate_schema_calls.count == expected_schema_count, 'Should respect _defer_build_mode'
-
-    if defer_build_mode is None or 'model' in defer_build_mode:
-        assert isinstance(MyNestedModel.__pydantic_validator__, MockValSer)
-        assert isinstance(MyNestedModel.__pydantic_serializer__, MockValSer)
-    else:
-        assert isinstance(MyNestedModel.__pydantic_validator__, SchemaValidator)
-        assert isinstance(MyNestedModel.__pydantic_serializer__, SchemaSerializer)
+    expected_schema_count = 1 if defer_build else 2
+    assert generate_schema_calls.count == expected_schema_count, 'Should respect defer_build'
 
     m = MyModel(y={'x': 1})
     assert m.y.x == 1
@@ -821,7 +782,7 @@ def test_config_model_defer_build_nested(
     assert m.model_validate({'y': {'x': 1}}).y.x == 1
     assert m.model_json_schema()['type'] == 'object'
 
-    if defer_build_mode is None or 'model' in defer_build_mode:
+    if defer_build:
         assert isinstance(MyNestedModel.__pydantic_validator__, MockValSer)
         assert isinstance(MyNestedModel.__pydantic_serializer__, MockValSer)
     else:

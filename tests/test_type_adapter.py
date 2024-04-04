@@ -73,8 +73,7 @@ OuterDict = Dict[str, 'IntList']
 @pytest.mark.parametrize('defer_build', [False, True])
 @pytest.mark.parametrize('method', ['validate', 'serialize', 'json_schema', 'json_schemas'])
 def test_global_namespace_variables(defer_build: bool, method: str, generate_schema_calls):
-    config = ConfigDict(defer_build=True, _defer_build_mode=DEFER_ENABLE_MODE) if defer_build else None
-    ta = TypeAdapter(OuterDict, config=config)
+    ta = TypeAdapter(OuterDict, config=ConfigDict(defer_build=defer_build))
 
     assert generate_schema_calls.count == (0 if defer_build else 1), 'Should be built deferred'
 
@@ -93,8 +92,7 @@ def test_global_namespace_variables(defer_build: bool, method: str, generate_sch
 @pytest.mark.parametrize('defer_build', [False, True])
 @pytest.mark.parametrize('method', ['validate', 'serialize', 'json_schema', 'json_schemas'])
 def test_model_global_namespace_variables(defer_build: bool, method: str, generate_schema_calls):
-    class MyModel(BaseModel):
-        model_config = ConfigDict(defer_build=True, _defer_build_mode=DEFER_ENABLE_MODE) if defer_build else None
+    class MyModel(BaseModel, defer_build=defer_build):
         x: OuterDict
 
     ta = TypeAdapter(MyModel)
@@ -119,8 +117,7 @@ def test_local_namespace_variables(defer_build: bool, method: str, generate_sche
     IntList = List[int]  # noqa: F841
     OuterDict = Dict[str, 'IntList']
 
-    config = ConfigDict(defer_build=True, _defer_build_mode=DEFER_ENABLE_MODE) if defer_build else None
-    ta = TypeAdapter(OuterDict, config=config)
+    ta = TypeAdapter(OuterDict, config=ConfigDict(defer_build=defer_build))
 
     assert generate_schema_calls.count == (0 if defer_build else 1), 'Should be built deferred'
 
@@ -141,8 +138,7 @@ def test_local_namespace_variables(defer_build: bool, method: str, generate_sche
 def test_model_local_namespace_variables(defer_build: bool, method: str, generate_schema_calls):
     IntList = List[int]  # noqa: F841
 
-    class MyModel(BaseModel):
-        model_config = ConfigDict(defer_build=True, _defer_build_mode=DEFER_ENABLE_MODE) if defer_build else None
+    class MyModel(BaseModel, defer_build=defer_build):
         x: Dict[str, 'IntList']
 
     ta = TypeAdapter(MyModel)
@@ -165,10 +161,8 @@ def test_model_local_namespace_variables(defer_build: bool, method: str, generat
 @pytest.mark.parametrize('method', ['validate', 'serialize', 'json_schema', 'json_schemas'])
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="ForwardRef doesn't accept module as a parameter in Python < 3.9")
 def test_top_level_fwd_ref(defer_build: bool, method: str, generate_schema_calls):
-    config = ConfigDict(defer_build=True, _defer_build_mode=DEFER_ENABLE_MODE) if defer_build else None
-
     FwdRef = ForwardRef('OuterDict', module=__name__)
-    ta = TypeAdapter(FwdRef, config=config)
+    ta = TypeAdapter(FwdRef, config=ConfigDict(defer_build=defer_build))
 
     assert generate_schema_calls.count == (0 if defer_build else 1), 'Should be built deferred'
 
@@ -393,8 +387,7 @@ def test_validate_python_from_attributes() -> None:
 def test_validate_strings(
     field_type, input_value, expected, raises_match, strict, defer_build: bool, generate_schema_calls
 ):
-    config = ConfigDict(defer_build=True, _defer_build_mode=DEFER_ENABLE_MODE) if defer_build else None
-    ta = TypeAdapter(field_type, config=config)
+    ta = TypeAdapter(field_type, config=ConfigDict(defer_build=defer_build))
 
     assert generate_schema_calls.count == (0 if defer_build else 1), 'Should be built deferred'
 
@@ -514,10 +507,8 @@ def defer_build_test_models(config: ConfigDict) -> List[Any]:
 
 
 CONFIGS = [
-    ConfigDict(defer_build=False, _defer_build_mode=('model',)),
-    ConfigDict(defer_build=False, _defer_build_mode=DEFER_ENABLE_MODE),
-    ConfigDict(defer_build=True, _defer_build_mode=('model',)),
-    ConfigDict(defer_build=True, _defer_build_mode=DEFER_ENABLE_MODE),
+    ConfigDict(defer_build=False),
+    ConfigDict(defer_build=True),
 ]
 MODELS_CONFIGS: List[Tuple[Any, ConfigDict]] = [
     (model, config) for config in CONFIGS for model in defer_build_test_models(config)
@@ -533,7 +524,7 @@ def test_core_schema_respects_defer_build(model: Any, config: ConfigDict, method
 
     type_adapter = TypeAdapter(model) if _type_has_config(model) else TypeAdapter(model, config=config)
 
-    if config['defer_build'] and 'type_adapter' in config['_defer_build_mode']:
+    if config['defer_build']:
         assert generate_schema_calls.count == 0, 'Should be built deferred'
         assert type_adapter._core_schema is None, 'Should be initialized deferred'
         assert type_adapter._validator is None, 'Should be initialized deferred'
