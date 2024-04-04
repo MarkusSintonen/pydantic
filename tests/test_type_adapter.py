@@ -517,7 +517,7 @@ MODELS_CONFIGS: List[Tuple[Any, ConfigDict]] = [
 
 @pytest.mark.parametrize('model, config', MODELS_CONFIGS)
 @pytest.mark.parametrize('method', ['schema', 'validate', 'dump'])
-def test_core_schema_respects_defer_build(model: Any, config: ConfigDict, method: str, generate_schema_calls) -> None:
+def test_respects_defer_build(model: Any, config: ConfigDict, method: str, generate_schema_calls) -> None:
     type_ = annotated_type(model) or model
     dumped = dict(x=1) if 'Dict[' in str(type_) else type_(x=1)
     generate_schema_calls.reset()
