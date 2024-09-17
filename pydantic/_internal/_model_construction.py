@@ -36,6 +36,7 @@ from ._typing_extra import (
     is_classvar,
     merge_cls_and_parent_ns,
     parent_frame_namespace,
+    NsWrapper, ImmutableNs,
 )
 from ._utils import ClassAttribute, SafeGetItemProxy
 from ._validate_call import ValidateCallWrapper
@@ -217,7 +218,9 @@ class ModelMetaclass(ABCMeta):
             if isinstance(parent_namespace, dict):
                 parent_namespace = unpack_lenient_weakvaluedict(parent_namespace)
 
-            types_namespace = merge_cls_and_parent_ns(cls, parent_namespace)
+            parent_ns = ImmutableNs(parent_namespace) if parent_namespace else None
+            types_namespace = merge_cls_and_parent_ns(cls, parent_ns)
+
             set_model_fields(cls, bases, config_wrapper, types_namespace)
 
             if config_wrapper.frozen and '__hash__' not in namespace:
@@ -509,8 +512,8 @@ def inspect_namespace(  # noqa C901
                     try:
                         ann_type = eval_type_backport(
                             _make_forward_ref(ann_type, is_argument=False, is_class=True),
-                            globalns=frame.f_globals,
-                            localns=frame.f_locals,
+                            globalns=NsWrapper(ImmutableNs(frame.f_globals)),
+                            localns=NsWrapper(ImmutableNs(frame.f_locals)),
                         )
                     except (NameError, TypeError):
                         pass
@@ -556,7 +559,7 @@ def make_hash_func(cls: type[BaseModel]) -> Any:
 
 
 def set_model_fields(
-    cls: type[BaseModel], bases: tuple[type[Any], ...], config_wrapper: ConfigWrapper, types_namespace: dict[str, Any]
+    cls: type[BaseModel], bases: tuple[type[Any], ...], config_wrapper: ConfigWrapper, types_namespace: NsWrapper
 ) -> None:
     """Collect and set `cls.model_fields` and `cls.__class_vars__`.
 
@@ -591,7 +594,7 @@ def complete_model_class(
     config_wrapper: ConfigWrapper,
     *,
     raise_errors: bool = True,
-    types_namespace: dict[str, Any] | None,
+    types_namespace: NsWrapper | None,
     create_model_module: str | None = None,
 ) -> bool:
     """Finish building a model class.
