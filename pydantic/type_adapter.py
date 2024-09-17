@@ -87,8 +87,11 @@ def _get_schema(type_: Any, config_wrapper: _config.ConfigWrapper, parent_depth:
     But at the very least this behavior is _subtly_ different from `BaseModel`'s.
     """
     local_ns = _typing_extra.parent_frame_namespace(parent_depth=parent_depth)
-    global_ns = sys._getframe(max(parent_depth - 1, 1)).f_globals.copy()
-    global_ns.update(local_ns or {})
+    global_ns = _typing_extra.NsWrapper(
+        _typing_extra.ImmutableNs(sys._getframe(max(parent_depth - 1, 1)).f_globals),
+        local_ns
+    )
+
     gen = (config_wrapper.schema_generator or _generate_schema.GenerateSchema)(
         config_wrapper, types_namespace=global_ns, typevars_map={}
     )

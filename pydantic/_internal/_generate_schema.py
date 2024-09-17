@@ -97,7 +97,8 @@ from ._generics import get_standard_typevars_map, has_instance_in_type, recursiv
 from ._import_utils import import_cached_base_model, import_cached_field_info
 from ._mock_val_ser import MockCoreSchema
 from ._schema_generation_shared import CallbackGetCoreSchemaHandler
-from ._typing_extra import get_cls_type_hints_lenient, is_annotated, is_finalvar, is_self_type, is_zoneinfo_type
+from ._typing_extra import get_cls_type_hints_lenient, is_annotated, is_finalvar, is_self_type, is_zoneinfo_type, \
+    NsWrapper, ImmutableNs
 from ._utils import lenient_issubclass, smart_deepcopy
 
 if TYPE_CHECKING:
@@ -321,30 +322,6 @@ def _add_custom_serialization_from_json_encoders(
     return schema
 
 
-TypesNamespace = Union[Dict[str, Any], None]
-
-
-class TypesNamespaceStack:
-    """A stack of types namespaces."""
-
-    def __init__(self, types_namespace: TypesNamespace):
-        self._types_namespace_stack: list[TypesNamespace] = [types_namespace]
-
-    @property
-    def tail(self) -> TypesNamespace:
-        return self._types_namespace_stack[-1]
-
-    @contextmanager
-    def push(self, for_type: type[Any]):
-        types_namespace = _typing_extra.get_module_ns_of(for_type).copy()
-        types_namespace.update(self.tail or {})
-        self._types_namespace_stack.append(types_namespace)
-        try:
-            yield
-        finally:
-            self._types_namespace_stack.pop()
-
-
 def _get_first_non_null(a: Any, b: Any) -> Any:
     """Return the first argument if it is not None, otherwise return the second argument.
 
@@ -369,12 +346,12 @@ class GenerateSchema:
     def __init__(
         self,
         config_wrapper: ConfigWrapper,
-        types_namespace: dict[str, Any] | None,
+        types_namespace: NsWrapper | None,
         typevars_map: dict[Any, Any] | None = None,
     ) -> None:
         # we need a stack for recursing into child models
         self._config_wrapper_stack = ConfigWrapperStack(config_wrapper)
-        self._types_namespace_stack = TypesNamespaceStack(types_namespace)
+        self._types_namespace_stack = types_namespace or NsWrapper()
         self._typevars_map = typevars_map
         self.field_name_stack = _FieldNameStack()
         self.model_type_stack = _ModelTypeStack()
@@ -384,7 +361,7 @@ class GenerateSchema:
     def __from_parent(
         cls,
         config_wrapper_stack: ConfigWrapperStack,
-        types_namespace_stack: TypesNamespaceStack,
+        types_namespace_stack: _typing_extra.NsWrapper,
         model_type_stack: _ModelTypeStack,
         typevars_map: dict[Any, Any] | None,
         defs: _Definitions,
@@ -403,8 +380,8 @@ class GenerateSchema:
         return self._config_wrapper_stack.tail
 
     @property
-    def _types_namespace(self) -> dict[str, Any] | None:
-        return self._types_namespace_stack.tail
+    def _types_namespace(self) -> NsWrapper:
+        return self._types_namespace_stack
 
     @property
     def _current_generate_schema(self) -> GenerateSchema:
@@ -1265,11 +1242,14 @@ class GenerateSchema:
         FieldInfo = import_cached_field_info()
 
         if has_instance_in_type(field_info.annotation, (ForwardRef, str)):
-            types_namespace = self._types_namespace
             if self._typevars_map:
-                types_namespace = (types_namespace or {}).copy()
                 # Ensure that typevars get mapped to their concrete types:
-                types_namespace.update({k.__name__: v for k, v in self._typevars_map.items()})
+                types_namespace = NsWrapper(
+                    self._types_namespace,
+                    ImmutableNs({k.__name__: v for k, v in self._typevars_map.items()}),
+                )
+            else:
+                types_namespace = self._types_namespace
 
             evaluated = _typing_extra.eval_type_lenient(field_info.annotation, types_namespace)
             if evaluated is not field_info.annotation and not has_instance_in_type(evaluated, PydanticRecursiveRef):

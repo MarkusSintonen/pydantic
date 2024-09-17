@@ -9,11 +9,12 @@ import types
 import typing
 import warnings
 from collections.abc import Callable
+from contextlib import contextmanager
 from functools import partial
 from types import GetSetDescriptorType
 from typing import TYPE_CHECKING, Any, Final, Iterable
 
-from typing_extensions import Annotated, Literal, TypeAliasType, TypeGuard, deprecated, get_args, get_origin
+from typing_extensions import Annotated, Literal, TypeAliasType, TypeGuard, deprecated, get_args, get_origin, Self
 
 if TYPE_CHECKING:
     from ._dataclasses import StandardDataclass
@@ -167,7 +168,34 @@ def is_finalvar(ann_type: Any) -> bool:
     return _check_finalvar(ann_type) or _check_finalvar(get_origin(ann_type))
 
 
-def parent_frame_namespace(*, parent_depth: int = 2, force: bool = False) -> dict[str, Any] | None:
+class ImmutableNs:
+    """Wraps namespace in a way that prevents accidental modification during schema construction.
+    Avoiding copying of possibly large namespaces."""
+
+    def __init__(self, namespace: dict[str, Any]) -> None:
+        self._ns = namespace
+
+    def __len__(self) -> int:
+        return len(self._ns)
+
+    def unwrap_mutable(self) -> dict[str, Any]:
+        """Unwrap the namespace. Be sure to not mutate the namespace contents when doing this.
+        This does not do copying for performance reasons. We trust the caller to not mutate the namespace"""
+        return self._ns
+
+    @classmethod
+    def from_module_ns_of(cls, obj: Any) -> Self:
+        module_name = getattr(obj, '__module__', None)
+        if module_name:
+            try:
+                return cls(sys.modules[module_name].__dict__)
+            except KeyError:
+                # happens occasionally, see https://github.com/pydantic/pydantic/issues/2363
+                pass
+        return cls({})
+
+
+def parent_frame_namespace(*, parent_depth: int = 2, force: bool = False) -> ImmutableNs | None:
     """We allow use of items in parent namespace to get around the issue with `get_type_hints` only looking in the
     global module namespace. See https://github.com/pydantic/pydantic/issues/2678#issuecomment-1008139014 -> Scope
     and suggestion at the end of the next comment by @gvanrossum.
@@ -192,7 +220,7 @@ def parent_frame_namespace(*, parent_depth: int = 2, force: bool = False) -> dic
     # note, we don't copy frame.f_locals here (or during the last return call), because we don't expect the namespace to be modified down the line
     # if this becomes a problem, we could implement some sort of frozen mapping structure to enforce this
     if force:
-        return frame.f_locals
+        return ImmutableNs(frame.f_locals)
 
     # if either of the following conditions are true, the class is defined at the top module level
     # to better understand why we need both of these checks, see
@@ -200,35 +228,55 @@ def parent_frame_namespace(*, parent_depth: int = 2, force: bool = False) -> dic
     if frame.f_back is None or frame.f_code.co_name == '<module>':
         return None
 
-    return frame.f_locals
+    return ImmutableNs(frame.f_locals)
 
 
-def get_module_ns_of(obj: Any) -> dict[str, Any]:
-    """Get the namespace of the module where the object is defined.
+class NsWrapper:
+    """Protects namespaces from modifications and provides a way to merge namespaces without copying namespaces."""
 
-    Caution: this function does not return a copy of the module namespace, so it should not be mutated.
-    The burden of enforcing this is on the caller.
-    """
-    module_name = getattr(obj, '__module__', None)
-    if module_name:
+    def __init__(self, *namespace: NsWrapper | ImmutableNs | None) -> None:
+        if namespace:
+            self._namespaces: list[NsWrapper | ImmutableNs] = [ns for ns in namespace if ns]
+        else:
+            self._namespaces = []
+        self._flatten_memo: ImmutableNs | None = None
+
+    @classmethod
+    def from_module_ns_of(cls, obj: Any) -> Self:
+        """Get immutable namespace of the module where the object is defined."""
+        return cls(ImmutableNs.from_module_ns_of(obj))
+
+    @contextmanager
+    def push(self, for_type: type[Any]):
+        self._flatten_memo = None
+        self._namespaces.insert(0, ImmutableNs.from_module_ns_of(for_type))
         try:
-            return sys.modules[module_name].__dict__
-        except KeyError:
-            # happens occasionally, see https://github.com/pydantic/pydantic/issues/2363
-            return {}
-    return {}
+            yield
+        finally:
+            self._namespaces.pop(0)
+
+    def flatten(self) -> ImmutableNs:
+        if self._flatten_memo is None:
+            res: dict[str, Any] = {}
+            for ns in self._namespaces:
+                if isinstance(ns, NsWrapper):
+                    res.update(ns.flatten().unwrap_mutable())
+                else:
+                    res.update(ns.unwrap_mutable())
+            self._flatten_memo = ImmutableNs(res)
+        return self._flatten_memo
 
 
-def merge_cls_and_parent_ns(cls: type[Any], parent_namespace: dict[str, Any] | None = None) -> dict[str, Any]:
-    ns = get_module_ns_of(cls).copy()
-    if parent_namespace is not None:
-        ns.update(parent_namespace)
-    ns[cls.__name__] = cls
-    return ns
+def merge_cls_and_parent_ns(cls: type[Any], parent_namespace: NsWrapper | ImmutableNs | None = None) -> NsWrapper:
+    return NsWrapper(
+        ImmutableNs.from_module_ns_of(cls),
+        parent_namespace,
+        ImmutableNs({cls.__name__: cls}),
+    )
 
 
 def get_cls_type_hints_lenient(
-    obj: Any, globalns: dict[str, Any] | None = None, mro: Iterable[type[Any]] | None = None
+    obj: Any, globalns: NsWrapper | None = None, mro: Iterable[type[Any]] | None = None
 ) -> dict[str, Any]:
     """Collect annotations from a class, including those from parent classes.
 
@@ -239,14 +287,14 @@ def get_cls_type_hints_lenient(
         mro = reversed(obj.__mro__)
     for base in mro:
         ann = base.__dict__.get('__annotations__')
-        localns = dict(vars(base))
+        localns = NsWrapper(ImmutableNs(dict(vars(base))))
         if ann is not None and ann is not GetSetDescriptorType:
             for name, value in ann.items():
                 hints[name] = eval_type_lenient(value, globalns, localns)
     return hints
 
 
-def eval_type_lenient(value: Any, globalns: dict[str, Any] | None = None, localns: dict[str, Any] | None = None) -> Any:
+def eval_type_lenient(value: Any, globalns: NsWrapper | None = None, localns: NsWrapper | None = None) -> Any:
     """Behaves like typing._eval_type, except it won't raise an error if a forward reference can't be resolved."""
     if value is None:
         value = NoneType
@@ -262,8 +310,8 @@ def eval_type_lenient(value: Any, globalns: dict[str, Any] | None = None, localn
 
 def eval_type_backport(
     value: Any,
-    globalns: dict[str, Any] | None = None,
-    localns: dict[str, Any] | None = None,
+    globalns: NsWrapper | None = None,
+    localns: NsWrapper | None = None,
     type_params: tuple[Any] | None = None,
 ) -> Any:
     """An enhanced version of `typing._eval_type` which will fall back to using the `eval_type_backport`
@@ -295,8 +343,8 @@ def eval_type_backport(
 
 def _eval_type_backport(
     value: Any,
-    globalns: dict[str, Any] | None = None,
-    localns: dict[str, Any] | None = None,
+    globalns: NsWrapper | None = None,
+    localns: NsWrapper | None = None,
     type_params: tuple[Any] | None = None,
 ) -> Any:
     try:
@@ -315,22 +363,43 @@ def _eval_type_backport(
                 '`typing` constructs or install the `eval_type_backport` package.'
             ) from e
 
-        return eval_type_backport(value, globalns, localns, try_default=False)
+        globalns_dict = globalns.flatten().unwrap_mutable() if globalns else None
+        localns_dict = localns.flatten().unwrap_mutable() if localns else None
+        return eval_type_backport(value, globalns_dict, localns_dict, try_default=False)
+
+
+def _needs_eval(value: Any) -> bool:
+    if isinstance(value, type):
+        return False
+
+    if isinstance(value, typing.ForwardRef):
+        return True
+
+    for arg in get_args(value):
+        if _needs_eval(arg):
+            return True
+
+    return False
 
 
 def _eval_type(
     value: Any,
-    globalns: dict[str, Any] | None = None,
-    localns: dict[str, Any] | None = None,
+    globalns: NsWrapper | None = None,
+    localns: NsWrapper | None = None,
     type_params: tuple[Any] | None = None,
 ) -> Any:
+    if not _needs_eval(value):
+        return value
+
+    globalns_dict = globalns.flatten().unwrap_mutable() if globalns else None
+    localns_dict = localns.flatten().unwrap_mutable() if localns else None
     if sys.version_info >= (3, 13):
         return typing._eval_type(  # type: ignore
-            value, globalns, localns, type_params=type_params
+            value, globalns_dict, localns_dict, type_params=type_params
         )
     else:
         return typing._eval_type(  # type: ignore
-            value, globalns, localns
+            value, globalns_dict, localns_dict
         )
 
 
@@ -346,7 +415,7 @@ def is_backport_fixable_error(e: TypeError) -> bool:
 
 
 def get_function_type_hints(
-    function: Callable[..., Any], *, include_keys: set[str] | None = None, types_namespace: dict[str, Any] | None = None
+    function: Callable[..., Any], *, include_keys: set[str] | None = None, types_namespace: NsWrapper | None = None
 ) -> dict[str, Any]:
     """Like `typing.get_type_hints`, but doesn't convert `X` to `Optional[X]` if the default value is `None`, also
     copes with `partial`.
@@ -365,7 +434,7 @@ def get_function_type_hints(
             type_hints.setdefault('return', function)
         return type_hints
 
-    globalns = get_module_ns_of(function)
+    globalns = NsWrapper.from_module_ns_of(function)
     type_hints = {}
     type_params: tuple[Any] = getattr(function, '__type_params__', ())  # type: ignore
     for name, value in annotations.items():

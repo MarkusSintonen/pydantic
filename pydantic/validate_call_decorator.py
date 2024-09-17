@@ -46,7 +46,7 @@ def validate_call(
     Returns:
         The decorated function.
     """
-    local_ns = _typing_extra.parent_frame_namespace()
+    local_ns = _typing_extra.NsWrapper(_typing_extra.parent_frame_namespace())
 
     def validate(function: AnyCallableT) -> AnyCallableT:
         if isinstance(function, (classmethod, staticmethod)):

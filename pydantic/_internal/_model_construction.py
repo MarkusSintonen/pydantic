@@ -36,6 +36,7 @@ from ._typing_extra import (
     is_classvar,
     merge_cls_and_parent_ns,
     parent_frame_namespace,
+    NsWrapper, ImmutableNs,
 )
 from ._utils import ClassAttribute, SafeGetItemProxy
 from ._validate_call import ValidateCallWrapper
@@ -210,12 +211,17 @@ class ModelMetaclass(ABCMeta):
                 obj.__set_name__(cls, name)
 
             if __pydantic_reset_parent_namespace__:
-                cls.__pydantic_parent_namespace__ = build_lenient_weakvaluedict(parent_frame_namespace())
-            parent_namespace = getattr(cls, '__pydantic_parent_namespace__', None)
+                ns_dict = parent_frame_namespace()
+                cls.__pydantic_parent_namespace__ = build_lenient_weakvaluedict(
+                    ns_dict.unwrap_mutable() if ns_dict else {}
+                )
+            parent_namespace: dict[str, Any] | None = getattr(cls, '__pydantic_parent_namespace__', None)
             if isinstance(parent_namespace, dict):
                 parent_namespace = unpack_lenient_weakvaluedict(parent_namespace)
 
-            types_namespace = merge_cls_and_parent_ns(cls, parent_namespace)
+            parent_ns = ImmutableNs(parent_namespace) if parent_namespace else None
+            types_namespace = merge_cls_and_parent_ns(cls, parent_ns)
+
             set_model_fields(cls, bases, config_wrapper, types_namespace)
 
             if config_wrapper.frozen and '__hash__' not in namespace:
@@ -450,9 +456,10 @@ def inspect_namespace(  # noqa C901
                 if frame is not None:
                     ann_type = eval_type_backport(
                         _make_forward_ref(ann_type, is_argument=False, is_class=True),
-                        globalns=frame.f_globals,
-                        localns=frame.f_locals,
+                        globalns=NsWrapper(ImmutableNs(frame.f_globals)),
+                        localns=NsWrapper(ImmutableNs(frame.f_locals)),
                     )
+
             if is_annotated(ann_type):
                 _, *metadata = typing_extensions.get_args(ann_type)
                 private_attr = next((v for v in metadata if isinstance(v, ModelPrivateAttr)), None)
@@ -494,7 +501,7 @@ def make_hash_func(cls: type[BaseModel]) -> Any:
 
 
 def set_model_fields(
-    cls: type[BaseModel], bases: tuple[type[Any], ...], config_wrapper: ConfigWrapper, types_namespace: dict[str, Any]
+    cls: type[BaseModel], bases: tuple[type[Any], ...], config_wrapper: ConfigWrapper, types_namespace: NsWrapper
 ) -> None:
     """Collect and set `cls.model_fields` and `cls.__class_vars__`.
 
@@ -529,7 +536,7 @@ def complete_model_class(
     config_wrapper: ConfigWrapper,
     *,
     raise_errors: bool = True,
-    types_namespace: dict[str, Any] | None,
+    types_namespace: NsWrapper | None,
     create_model_module: str | None = None,
 ) -> bool:
     """Finish building a model class.

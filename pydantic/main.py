@@ -537,23 +537,26 @@ class BaseModel(metaclass=_model_construction.ModelMetaclass):
             if '__pydantic_core_schema__' in cls.__dict__:
                 delattr(cls, '__pydantic_core_schema__')  # delete cached value to ensure full rebuild happens
             if _types_namespace is not None:
-                types_namespace: dict[str, Any] | None = _types_namespace.copy()
+                types_namespace: _typing_extra.NsWrapper | None = _typing_extra.NsWrapper(
+                    _typing_extra.ImmutableNs(_types_namespace)
+                )
             else:
                 if _parent_namespace_depth > 0:
-                    frame_parent_ns = (
-                        _typing_extra.parent_frame_namespace(parent_depth=_parent_namespace_depth, force=True) or {}
+                    frame_parent_ns = _typing_extra.parent_frame_namespace(
+                        parent_depth=_parent_namespace_depth, force=True
                     )
                     cls_parent_ns = (
                         _model_construction.unpack_lenient_weakvaluedict(cls.__pydantic_parent_namespace__) or {}
                     )
-                    types_namespace = {**cls_parent_ns, **frame_parent_ns}
-                    cls.__pydantic_parent_namespace__ = _model_construction.build_lenient_weakvaluedict(types_namespace)
+                    parent_ns_dict = {**cls_parent_ns, **(frame_parent_ns.unwrap_mutable() if frame_parent_ns else {})}
+                    cls.__pydantic_parent_namespace__ = _model_construction.build_lenient_weakvaluedict(parent_ns_dict)
                 else:
-                    types_namespace = _model_construction.unpack_lenient_weakvaluedict(
+                    parent_ns_dict = _model_construction.unpack_lenient_weakvaluedict(
                         cls.__pydantic_parent_namespace__
                     )
 
-                types_namespace = _typing_extra.merge_cls_and_parent_ns(cls, types_namespace)
+                parent = _typing_extra.ImmutableNs(parent_ns_dict) if parent_ns_dict else None
+                types_namespace = _typing_extra.merge_cls_and_parent_ns(cls, parent)
 
             # manually override defer_build so complete_model_class doesn't skip building the model again
             config = {**cls.model_config, 'defer_build': False}
