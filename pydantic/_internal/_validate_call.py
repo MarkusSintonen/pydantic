@@ -47,13 +47,13 @@ class ValidateCallWrapper:
         # specifically, we shouldn't be pumping the namespace full of type_params
         # when we take namespace and type_params arguments in eval_type_backport
         type_params = (namespace or {}).get('__type_params__', ()) + getattr(schema_type, '__type_params__', ())
-        namespace = {
+        namespace_immutable = _typing_extra.ImmutableNs({
             **{param.__name__: param for param in type_params},
             **(global_ns or {}),
             **(namespace or {}),
-        }
+        })
         config_wrapper = ConfigWrapper(config)
-        gen_schema = _generate_schema.GenerateSchema(config_wrapper, namespace)
+        gen_schema = _generate_schema.GenerateSchema(config_wrapper, _typing_extra.NsWrapper(namespace_immutable))
         schema = gen_schema.clean_schema(gen_schema.generate_schema(function))
         core_config = config_wrapper.core_config(self)
 
@@ -70,7 +70,7 @@ class ValidateCallWrapper:
         if validate_return:
             signature = inspect.signature(function)
             return_type = signature.return_annotation if signature.return_annotation is not signature.empty else Any
-            gen_schema = _generate_schema.GenerateSchema(config_wrapper, namespace)
+            gen_schema = _generate_schema.GenerateSchema(config_wrapper, _typing_extra.NsWrapper(namespace_immutable))
             schema = gen_schema.clean_schema(gen_schema.generate_schema(return_type))
             validator = create_schema_validator(
                 schema,

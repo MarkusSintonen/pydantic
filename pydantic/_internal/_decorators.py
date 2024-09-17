@@ -15,7 +15,7 @@ from typing_extensions import Literal, TypeAlias, is_typeddict
 from ..errors import PydanticUserError
 from ._core_utils import get_type_ref
 from ._internal_dataclass import slots_true
-from ._typing_extra import get_function_type_hints
+from ._typing_extra import get_function_type_hints, NsWrapper
 
 if TYPE_CHECKING:
     from ..fields import ComputedFieldInfo
@@ -752,7 +752,7 @@ def unwrap_wrapped_function(
 
 
 def get_function_return_type(
-    func: Any, explicit_return_type: Any, types_namespace: dict[str, Any] | None = None
+    func: Any, explicit_return_type: Any, types_namespace: NsWrapper | None = None
 ) -> Any:
     """Get the function return type.
 
