@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from copy import deepcopy
 from typing import Any, Union
 
 from pydantic_core import CoreSchema, core_schema
@@ -93,42 +94,29 @@ def get_type_ref(type_: type[Any], args_override: tuple[type[Any], ...] | None =
     return type_ref
 
 
-def _print_strip_metadata(schema: CoreSchema) -> CoreSchema:
-    def strip_metadata(s: dict[str, Any]) -> dict[str, Any]:
-        s = s.copy()
-        s.pop('metadata', None)
-        if s.get('type') == 'model-fields':
-            s = s.copy()
-            s['fields'] = {k: v.copy() for k, v in s['fields'].items()}
-            for field_name, field_schema in s['fields'].items():
-                field_schema.pop('metadata', None)
-                s['fields'][field_name] = field_schema
-            computed_fields = s.get('computed_fields', None)
-            if computed_fields:
-                s['computed_fields'] = [cf.copy() for cf in computed_fields]
-                for cf in computed_fields:
-                    cf.pop('metadata', None)
-            else:
-                s.pop('computed_fields', None)
-        elif s.get('type') == 'model':
-            # remove some defaults
-            if s.get('custom_init', True) is False:
-                s.pop('custom_init')
-            if s.get('root_model', True) is False:
-                s.pop('root_model')
-            if {'title'}.issuperset(s.get('config', {}).keys()):
-                s.pop('config', None)
-        return s
+def _print_strip_metadata(s: dict[str, Any]) -> None:
+    s.pop('metadata', None)
+    if s.get('type') == 'model-fields':
+        if not s.get('computed_fields', None):
+            s.pop('computed_fields', None)
+    elif s.get('type') == 'model':
+        # remove some defaults
+        if s.get('custom_init', True) is False:
+            s.pop('custom_init')
+        if s.get('root_model', True) is False:
+            s.pop('root_model')
+        if {'title'}.issuperset(s.get('config', {}).keys()):
+            s.pop('config', None)
 
-    def traverse_strip_metadata(v: Any) -> Any:
-        if isinstance(v, dict):
-            res = {k: traverse_strip_metadata(vv) for k, vv in v.items()}
-            return strip_metadata(res)  # type: ignore
-        elif isinstance(v, list):
-            return [traverse_strip_metadata(vv) for vv in v]
-        return v
 
-    return traverse_strip_metadata(schema)
+def _print_strip_metadata_recursively(val: Any) -> None:
+    if isinstance(val, dict):
+        for v in val.values():
+            _print_strip_metadata_recursively(v)
+        _print_strip_metadata(val)  # type: ignore
+    elif isinstance(val, list):
+        for v in val:
+            _print_strip_metadata_recursively(v)
 
 
 def pretty_print_core_schema(
@@ -145,7 +133,8 @@ def pretty_print_core_schema(
     from rich import print  # type: ignore  # install it manually in your dev env
 
     if not include_metadata:
-        schema = _print_strip_metadata(schema)
+        schema = deepcopy(schema)
+        _print_strip_metadata_recursively(schema)
 
     return print(schema)
 
