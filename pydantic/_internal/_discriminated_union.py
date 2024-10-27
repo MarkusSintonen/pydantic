@@ -24,9 +24,12 @@ class MissingDefinitionForUnionRef(Exception):
         super().__init__(f'Missing definition for ref {self.ref!r}')
 
 
-def set_discriminator_in_metadata(schema: CoreSchema, discriminator: Any) -> None:
+def set_discriminator_in_metadata(schema: CoreSchema, discriminator: Any) -> CoreSchema:
     # These are gathered for schema cleaning in pydantic-core
-    schema.setdefault('metadata', {})[CORE_SCHEMA_METADATA_DISCRIMINATOR_PLACEHOLDER_KEY] = discriminator
+    return {
+        **schema,
+        'metadata': {**schema.get('metadata', {}), CORE_SCHEMA_METADATA_DISCRIMINATOR_PLACEHOLDER_KEY: discriminator},
+    }
 
 
 def apply_discriminator(

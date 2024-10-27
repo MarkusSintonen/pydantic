@@ -1171,8 +1171,7 @@ class UuidVersion:
             # update existing schema with self.uuid_version
             schema = handler(source)
             _check_annotated_type(schema['type'], 'uuid', self.__class__.__name__)
-            schema['version'] = self.uuid_version  # type: ignore
-            return schema
+            return {**schema, 'version': self.uuid_version}
 
     def __hash__(self) -> int:
         return hash(type(self.uuid_version))
@@ -2152,8 +2151,7 @@ else:
             else:
                 schema = handler(source)
                 _check_annotated_type(schema['type'], 'date', cls.__name__)
-                schema['now_op'] = 'past'
-                return schema
+                return {**schema, 'now_op': 'past'}
 
         def __repr__(self) -> str:
             return 'PastDate'
@@ -2171,8 +2169,7 @@ else:
             else:
                 schema = handler(source)
                 _check_annotated_type(schema['type'], 'date', cls.__name__)
-                schema['now_op'] = 'future'
-                return schema
+                return {**schema, 'now_op': 'future'}
 
         def __repr__(self) -> str:
             return 'FutureDate'
@@ -2228,8 +2225,7 @@ else:
             else:
                 schema = handler(source)
                 _check_annotated_type(schema['type'], 'datetime', cls.__name__)
-                schema['tz_constraint'] = 'aware'
-                return schema
+                return {**schema, 'tz_constraint': 'aware'}
 
         def __repr__(self) -> str:
             return 'AwareDatetime'
@@ -2247,8 +2243,7 @@ else:
             else:
                 schema = handler(source)
                 _check_annotated_type(schema['type'], 'datetime', cls.__name__)
-                schema['tz_constraint'] = 'naive'
-                return schema
+                return {**schema, 'tz_constraint': 'naive'}
 
         def __repr__(self) -> str:
             return 'NaiveDatetime'
@@ -2266,8 +2261,7 @@ else:
             else:
                 schema = handler(source)
                 _check_annotated_type(schema['type'], 'datetime', cls.__name__)
-                schema['now_op'] = 'past'
-                return schema
+                return {**schema, 'now_op': 'past'}
 
         def __repr__(self) -> str:
             return 'PastDatetime'
@@ -2285,8 +2279,7 @@ else:
             else:
                 schema = handler(source)
                 _check_annotated_type(schema['type'], 'datetime', cls.__name__)
-                schema['now_op'] = 'future'
-                return schema
+                return {**schema, 'now_op': 'future'}
 
         def __repr__(self) -> str:
             return 'FutureDatetime'
@@ -2914,10 +2907,9 @@ class Tag:
 
     def __get_pydantic_core_schema__(self, source_type: Any, handler: GetCoreSchemaHandler) -> CoreSchema:
         schema = handler(source_type)
-        metadata = schema.setdefault('metadata', {})
+        metadata = schema.get('metadata', {})
         assert isinstance(metadata, dict)
-        metadata[_core_utils.TAGGED_UNION_TAG_KEY] = self.tag
-        return schema
+        return {**schema, 'metadata': {**metadata, _core_utils.TAGGED_UNION_TAG_KEY: self.tag}}
 
 
 @_dataclasses.dataclass(**_internal_dataclass.slots_true, frozen=True)

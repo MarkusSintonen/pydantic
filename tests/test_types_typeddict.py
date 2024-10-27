@@ -4,6 +4,7 @@ Tests for TypedDict
 
 import sys
 import typing
+from copy import deepcopy
 from typing import Any, Dict, Generic, List, Optional, TypeVar
 
 import pytest
@@ -227,6 +228,7 @@ def test_typeddict_schema(TypedDict):
         ) -> core_schema.CoreSchema:
             schema = handler(source_type)
             schema = handler.resolve_ref_schema(schema)
+            schema = deepcopy(schema)
             assert schema['type'] == 'typed-dict'
             b = schema['fields']['b']['schema']
             assert b['type'] == 'int'

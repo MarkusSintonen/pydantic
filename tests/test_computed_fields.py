@@ -557,8 +557,8 @@ class CustomType(str):
     @classmethod
     def __get_pydantic_core_schema__(cls, source: Any, handler: GetCoreSchemaHandler) -> core_schema.CoreSchema:
         schema = handler(str)
-        schema['serialization'] = core_schema.plain_serializer_function_ser_schema(lambda x: '123')
-        return schema
+        serialization = core_schema.plain_serializer_function_ser_schema(lambda x: '123')
+        return {**schema, 'serialization': serialization}
 
 
 def test_computed_fields_infer_return_type():

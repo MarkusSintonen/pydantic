@@ -5,6 +5,7 @@ import math
 import re
 import sys
 import typing
+from copy import deepcopy
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from enum import Enum, IntEnum
@@ -6730,3 +6731,38 @@ def test_arbitrary_ref_in_json_schema() -> None:
     }
 
     # raises KeyError: '#/components/schemas/Pet'
+
+
+def test_does_not_modify_property_model_core_schema():
+    class Model1(BaseModel):
+        a: int
+
+        @classmethod
+        def __get_pydantic_json_schema__(
+            cls, core_schema: core_schema.CoreSchema, handler: GetJsonSchemaHandler
+        ) -> JsonSchemaValue:
+            json_schema = handler(core_schema)
+            json_schema['properties']['a']['gt'] = 1
+            return json_schema
+
+    Model1.model_json_schema()
+    core_schema1 = deepcopy(Model1.__pydantic_core_schema__)
+    assert isinstance(core_schema1, dict)
+    pydantic_js_functions = core_schema1['metadata']['pydantic_js_functions']
+
+    class Model2(BaseModel):
+        b: Model1
+
+        @classmethod
+        def __get_pydantic_json_schema__(
+                cls, core_schema: core_schema.CoreSchema, handler: GetJsonSchemaHandler
+        ) -> JsonSchemaValue:
+            json_schema = handler(core_schema)
+            json_schema['properties']['b']['title'] = 'Foobar'
+            return json_schema
+
+    Model2.model_json_schema()
+    core_schema2 = deepcopy(Model2.__pydantic_core_schema__)
+    assert isinstance(core_schema2, dict)
+
+    assert Model1.__pydantic_core_schema__['metadata']['pydantic_js_functions'] == pydantic_js_functions

@@ -161,8 +161,7 @@ class MyStrict:
         cls, source: Any, handler: GetCoreSchemaHandler
     ) -> CoreSchema:
         schema = handler(source)  # (1)!
-        schema['strict'] = True
-        return schema
+        return {**schema, 'strict': True}
 
 
 class MyGt:
@@ -171,8 +170,7 @@ class MyGt:
         cls, source: Any, handler: GetCoreSchemaHandler
     ) -> CoreSchema:
         schema = handler(source)  # (2)!
-        schema['gt'] = 1
-        return schema
+        return {**schema, 'gt': 1}
 
 
 ta = TypeAdapter(Annotated[int, MyStrict(), MyGt()])

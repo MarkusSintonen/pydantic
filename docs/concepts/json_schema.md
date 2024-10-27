@@ -926,7 +926,7 @@ except ValidationError as e:
 
 So far we have been wrapping the schema, but if you just want to *modify* it or *ignore* it you can as well.
 
-To modify the schema, first call the handler, then mutate the result:
+To modify the schema, first call the handler, then change the result:
 
 ```py
 from typing import Any, Type
@@ -945,8 +945,7 @@ class SmallString:
     ) -> core_schema.CoreSchema:
         schema = handler(source)
         assert schema['type'] == 'str'
-        schema['max_length'] = 10  # modify in place
-        return schema
+        return {**schema, 'max_length': 10}  # modify the schema
 
 
 class MyModel(BaseModel):

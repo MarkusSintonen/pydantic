@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+from copy import deepcopy
 from functools import partial, partialmethod
 from typing import TYPE_CHECKING, Any, Callable, TypeVar, overload
 
@@ -74,13 +75,13 @@ class PlainSerializer:
         except NameError as e:
             raise PydanticUndefinedAnnotation.from_name_error(e) from e
         return_schema = None if return_type is PydanticUndefined else handler.generate_schema(return_type)
-        schema['serialization'] = core_schema.plain_serializer_function_ser_schema(
+        serialization = core_schema.plain_serializer_function_ser_schema(
             function=self.func,
             info_arg=_decorators.inspect_annotated_serializer(self.func, 'plain'),
             return_schema=return_schema,
             when_used=self.when_used,
         )
-        return schema
+        return {**schema, 'serialization': serialization}
 
 
 @dataclasses.dataclass(**_internal_dataclass.slots_true, frozen=True)
@@ -175,13 +176,13 @@ class WrapSerializer:
         except NameError as e:
             raise PydanticUndefinedAnnotation.from_name_error(e) from e
         return_schema = None if return_type is PydanticUndefined else handler.generate_schema(return_type)
-        schema['serialization'] = core_schema.wrap_serializer_function_ser_schema(
+        serialization = core_schema.wrap_serializer_function_ser_schema(
             function=self.func,
             info_arg=_decorators.inspect_annotated_serializer(self.func, 'wrap'),
             return_schema=return_schema,
             when_used=self.when_used,
         )
-        return schema
+        return {**schema, 'serialization': serialization}
 
 
 if TYPE_CHECKING:
@@ -433,14 +434,18 @@ else:
         def __get_pydantic_core_schema__(
             self, source_type: Any, handler: GetCoreSchemaHandler
         ) -> core_schema.CoreSchema:
-            schema = handler(source_type)
-            schema_to_update = schema
-            while schema_to_update['type'] == 'definitions':
-                schema_to_update = schema_to_update.copy()
-                schema_to_update = schema_to_update['schema']
-            schema_to_update['serialization'] = core_schema.wrap_serializer_function_ser_schema(
+            serialization = core_schema.wrap_serializer_function_ser_schema(
                 lambda x, h: h(x), schema=core_schema.any_schema()
             )
+            schema = handler(source_type)
+            if schema['type'] != 'definitions':
+                return {**schema, 'serialization': serialization}
+
+            schema = deepcopy(schema)  # Slow path, which should not happen in usual usage
+            schema_to_update = schema
+            while schema_to_update['type'] == 'definitions':
+                schema_to_update = schema_to_update['schema']
+            schema_to_update['serialization'] = serialization
             return schema
 
         __hash__ = object.__hash__

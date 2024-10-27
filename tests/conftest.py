@@ -16,8 +16,9 @@ from typing import Any, Callable
 import pytest
 from _pytest.assertion.rewrite import AssertionRewritingHook
 from jsonschema import Draft202012Validator, SchemaError
+from pydantic_core import CoreSchema
 
-from pydantic._internal._generate_schema import GenerateSchema
+from pydantic._internal._generate_schema import GenerateSchema, _Definitions
 from pydantic.json_schema import GenerateJsonSchema
 
 
@@ -178,3 +179,87 @@ def validate_json_schemas(monkeypatch: pytest.MonkeyPatch, request: pytest.Fixtu
         return json_schema
 
     monkeypatch.setattr(GenerateJsonSchema, 'generate', generate)
+
+
+def _immutable(*_args: Any, **_kwargs: Any):
+    raise AssertionError('core schema mutation is not allowed while generating')
+
+
+class imdict(dict):
+    __setitem__ = _immutable
+    __delitem__ = _immutable
+    clear = _immutable
+    update = _immutable
+    setdefault = _immutable
+    pop = _immutable
+    popitem = _immutable
+
+    def copy(self) -> dict:
+        return {**self}
+
+    def __deepcopy__(self, *args, **kwargs) -> dict:
+        return mutable_schema(self)
+
+
+class imlist(list):
+    __setitem__ = _immutable
+    __delitem__ = _immutable
+    clear = _immutable
+    append = _immutable
+    extend = _immutable
+    insert = _immutable
+    remove = _immutable
+    pop = _immutable
+
+    def copy(self) -> list:
+        return [*self]
+
+    def __deepcopy__(self, *args, **kwargs) -> list:
+        return mutable_schema(self)
+
+
+def immutable_schema(value: Any) -> Any:
+    def _rec(val: Any) -> Any:
+        if type(val) in (dict, imdict):
+            return imdict({k: _rec(v) for k, v in val.items()})
+        elif type(val) in (list, imlist):
+            return imlist(_rec(v) for v in val)
+        elif type(val) is tuple:
+            return tuple([_rec(v) for v in val])
+        return val
+
+    return _rec(value)
+
+
+def mutable_schema(value: Any) -> Any:
+    def _rec(val: Any) -> Any:
+        if type(val) in (dict, imdict):
+            return {k: _rec(v) for k, v in val.items()}
+        elif type(val) in (list, imlist):
+            return [_rec(v) for v in val]
+        elif type(val) is tuple:
+            return tuple([_rec(v) for v in val])
+        return val
+
+    return _rec(value)
+
+
+@pytest.fixture(scope='function', autouse=True)
+def ensure_no_dangerous_schema_mutations(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> None:
+    orig_generate = GenerateSchema._generate_or_get_existing_schema
+    orig_generic = GenerateSchema._match_generic_type
+    orig_finalize = _Definitions.finalize_schema_defs_inplace
+
+    def generate(*args: Any, **kwargs: Any) -> Any:
+        return immutable_schema(orig_generate(*args, **kwargs))
+
+    def generic(*args: Any, **kwargs: Any) -> Any:
+        return immutable_schema(orig_generic(*args, **kwargs))
+
+    def finalize(self: _Definitions, schema: CoreSchema) -> Any:
+        self._definitions = mutable_schema(self._definitions)
+        return orig_finalize(self, mutable_schema(schema))
+
+    monkeypatch.setattr(GenerateSchema, '_generate_or_get_existing_schema', generate)
+    monkeypatch.setattr(GenerateSchema, '_match_generic_type', generic)
+    monkeypatch.setattr(_Definitions, 'finalize_schema_defs_inplace', finalize)
